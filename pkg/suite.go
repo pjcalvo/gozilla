@@ -40,7 +40,6 @@ func (t *TestSuite) WithThinkTime(thinkTime time.Duration) *TestSuite {
 }
 
 func (t *TestSuite) executeTasksForThread(threadID int, tasks []Task, results chan result.Result) {
-	client := http.Client{}
 	for {
 		select {
 		// time out after the test is complete
@@ -49,6 +48,7 @@ func (t *TestSuite) executeTasksForThread(threadID int, tasks []Task, results ch
 			return
 		default:
 			for _, task := range tasks {
+				client := http.Client{}
 				result := task.executeLinearTask(threadID, client, t.baseURL)
 				results <- result
 			}
@@ -58,7 +58,7 @@ func (t *TestSuite) executeTasksForThread(threadID int, tasks []Task, results ch
 }
 
 func (t *TestSuite) ExecuteTest(tasks []Task) error {
-	tasks, err := cleanUpTasks(tasks, t.baseURL)
+	tasks, err := prepareTasks(tasks, t.baseURL)
 	if err != nil {
 		return err
 	}

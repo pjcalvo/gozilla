@@ -67,7 +67,7 @@ func (t *Task) executeLinearTask(threadID int, client http.Client, baseURL strin
 }
 
 // cleanUpTasks preappend the baseURL to the tasks
-func cleanUpTasks(tasks []Task, baseURL string) ([]Task, error) {
+func prepareTasks(tasks []Task, baseURL string) ([]Task, error) {
 	for _, t := range tasks {
 		var err error
 		t.Request.URL, err = t.Request.URL.Parse(fmt.Sprintf("%s%s", baseURL, t.Request.URL))

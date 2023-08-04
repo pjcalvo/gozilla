@@ -14,7 +14,7 @@ func main() {
 	suite := gozilla.NewTestSuite().
 		WithBaseURL("https://pjcalvo.github.io").
 		WithDuration(time.Minute * 5).
-		WithUsers(1).
+		WithUsers(2).
 		WithThinkTime(time.Second * 1)
 
 	// define test tasks

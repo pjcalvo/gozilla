@@ -6,7 +6,12 @@ import (
 	"log"
 	"os"
 	"strconv"
+	"sync"
 	"time"
+)
+
+var (
+	lock = sync.Mutex{}
 )
 
 func GenerateFile() (string, *csv.Writer, error) {
@@ -43,6 +48,7 @@ func GenerateFile() (string, *csv.Writer, error) {
 
 func WritterWorker(writer *csv.Writer, results <-chan Result, resultsPlotter chan Result) {
 	for r := range results {
+		lock.Lock()
 		record := []string{
 			r.Timestamp.Format(time.RFC3339),
 			strconv.Itoa(r.ThreadID),
@@ -59,6 +65,7 @@ func WritterWorker(writer *csv.Writer, results <-chan Result, resultsPlotter cha
 			log.Fatal(err)
 		}
 		writer.Flush()
+		lock.Unlock()
 		resultsPlotter <- r
 	}
 }
