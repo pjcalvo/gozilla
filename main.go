@@ -1,9 +1,9 @@
 package main
 
 import (
-	"errors"
+	"context"
+	"fmt"
 	"log"
-	"net/http"
 	"time"
 
 	gozilla "github.com/pjcalvo/gozilla/pkg"
@@ -12,26 +12,37 @@ import (
 func main() {
 	// initialize a test suite
 	suite := gozilla.NewTestSuite().
-		WithBaseURL("https://pjcalvo.github.io").
 		WithDuration(time.Minute * 5).
+		WithPlotter().
 		WithUsers(2).
 		WithThinkTime(time.Second * 1)
 
 	// define test tasks
-	reqHomePage, _ := http.NewRequest("GET", "/", nil)
-	reqAbout, _ := http.NewRequest("GET", "/about", nil)
-	tasks := []gozilla.Task{
+	tasks := gozilla.Tasks{
+		// task 1
 		{
-			Request: reqHomePage,
-			Label:   "homepage",
+			Label: "taks # 1",
+			Execute: func(_ context.Context) (any, error) {
+				return "1", nil
+			},
+			ExpectedFunc: func(_ context.Context, something any, err error) error {
+				val := something.(string)
+				if val != "1" {
+					return err
+				}
+				return nil
+			},
 		},
+		// task 2
 		{
-			Request: reqAbout,
-			Label:   "about",
-			// define expected behavior
-			ExpectedFunc: func(r *http.Response) error {
-				if r.StatusCode != 200 {
-					return errors.New("response code is not expected")
+			Label: "taks # 2",
+			Execute: func(_ context.Context) (any, error) {
+				return "error", nil
+			},
+			ExpectedFunc: func(_ context.Context, something any, err error) error {
+				val := something.(string)
+				if val == "error" {
+					return fmt.Errorf("error happened")
 				}
 				return nil
 			},

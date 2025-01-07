@@ -1,9 +1,9 @@
-package result
+package internal
 
 import (
+	"context"
 	"encoding/csv"
 	"fmt"
-	"log"
 	"os"
 	"strconv"
 	"sync"
@@ -46,26 +46,32 @@ func GenerateFile() (string, *csv.Writer, error) {
 	return fileName, writer, nil
 }
 
-func WritterWorker(writer *csv.Writer, results <-chan Result, resultsPlotter chan Result) {
-	for r := range results {
-		lock.Lock()
-		record := []string{
-			r.Timestamp.Format(time.RFC3339),
-			strconv.Itoa(r.ThreadID),
-			strconv.Itoa(r.Status),
-			strconv.FormatFloat(r.Duration, 'f', 2, 64),
-			r.Label,
-			r.ResponseMessage,
-			strconv.Itoa(r.Bytes),
-			strconv.FormatBool(r.Success),
-			r.Err,
+func WriterWorker(ctx context.Context, writer *csv.Writer, results <-chan Result, resultsPlotter chan Result) error {
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+
+		case r := <-results:
+			lock.Lock()
+			record := []string{
+				r.Timestamp.Format(time.RFC3339),
+				strconv.Itoa(r.ThreadID),
+				strconv.Itoa(r.Status),
+				strconv.FormatFloat(r.Duration, 'f', 2, 64),
+				r.Label,
+				r.ResponseMessage,
+				strconv.Itoa(r.Bytes),
+				strconv.FormatBool(r.Success),
+				r.Err,
+			}
+			err := writer.Write(record)
+			if err != nil {
+				return err
+			}
+			writer.Flush()
+			lock.Unlock()
+			resultsPlotter <- r
 		}
-		err := writer.Write(record)
-		if err != nil {
-			log.Fatal(err)
-		}
-		writer.Flush()
-		lock.Unlock()
-		resultsPlotter <- r
 	}
 }

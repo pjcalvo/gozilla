@@ -1,79 +1,60 @@
-package client
+package pkg
 
 import (
-	"fmt"
-	"io"
-	"net/http"
+	"context"
 	"time"
 
-	"github.com/pjcalvo/gozilla/internal/result"
+	"github.com/pjcalvo/gozilla/internal"
 )
 
+type Tasks []Task
+
 type Task struct {
-	WaitTime     int
-	Request      *http.Request
-	ExpectedFunc func(*http.Response) error
+	Execute      ExecuteFunc
+	ExpectedFunc ExpectFunc
 	Label        string
 }
 
-func (t *Task) defineLabel() {
-	if t.Label == "" {
-		t.Label = fmt.Sprintf("%s - %s", t.Request.Method, t.Request.RequestURI)
-	}
-}
-
-func (t *Task) executeLinearTask(threadID int, client http.Client, baseURL string) result.Result {
-	t.defineLabel()
+func (t *Task) executeLinearTask(ctx context.Context, threadID int) internal.Result {
 	startTime := time.Now()
 
-	result := result.Result{
+	result := internal.Result{
 		Timestamp: startTime,
 		ThreadID:  threadID,
 		Label:     t.Label,
 	}
 
-	resp, err := client.Do(t.Request)
-	result.Duration = float64(time.Since(startTime).Milliseconds())
-
-	var body []byte
-
-	if err != nil {
-		result.Err = err.Error()
-		return result
-	}
-
-	result.Status = resp.StatusCode
-
-	defer resp.Body.Close()
-	body, err = io.ReadAll(resp.Body)
-	if err != nil {
-		result.Err = err.Error()
-	}
-
-	result.Bytes = len(body)
-	// result.responseMessage = string(body)
+	res, err := t.Execute(ctx)
+	result.Duration = float64(time.Since(startTime).Seconds())
 
 	// expected function overrides all
 	if t.ExpectedFunc != nil {
-		if err = t.ExpectedFunc(resp); err != nil {
+		if err = t.ExpectedFunc(ctx, res, err); err != nil {
 			result.Err = err.Error()
 			result.Success = false
 			return result
 		}
 	}
 
+	// this means the error was not handled by the expect function
+	if err != nil {
+		result.Err = err.Error()
+		result.Success = false
+		return result
+	}
+
 	result.Success = true
 	return result
 }
 
-// cleanUpTasks preappend the baseURL to the tasks
-func prepareTasks(tasks []Task, baseURL string) ([]Task, error) {
-	for _, t := range tasks {
-		var err error
-		t.Request.URL, err = t.Request.URL.Parse(fmt.Sprintf("%s%s", baseURL, t.Request.URL))
-		if err != nil {
-			return nil, err
-		}
-	}
+// prepareTasks runs the init function
+func prepareTasks(tasks []Task) ([]Task, error) {
+	// for _, t := range tasks {
+	// 	var err error
+	// 	t.Request.URL, err = t.Request.URL.Parse(fmt.Sprintf("%s%s", baseURL, t.Request.URL))
+	// 	if err != nil {
+	// 		return nil, err
+	// 	}
+	// }
 	return tasks, nil
 }

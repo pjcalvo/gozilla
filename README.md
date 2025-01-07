@@ -31,9 +31,9 @@ import (
 
 ```go
 suite := gozilla.NewTestSuite().
-    WithBaseURL("https://pjcalvo.github.io").
     WithDuration(time.Minute * 5).
-    WithUsers(3)
+    WithPlotter().
+    WithUsers(3).
     WithThinkTime(time.Second * 1)
 ```
 

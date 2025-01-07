@@ -1,8 +1,9 @@
-package result
+package internal
 
 import (
 	"fmt"
-	"log"
+	"log/slog"
+	"os"
 	"time"
 
 	"github.com/gizak/termui/v3/widgets"
@@ -10,9 +11,10 @@ import (
 	ui "github.com/gizak/termui/v3"
 )
 
-func PlotWorker(results <-chan Result, csvReporterPath string) {
+func PlotWorker(results <-chan Result, csvReporterPath string, sigChan chan os.Signal) {
 	if err := ui.Init(); err != nil {
-		log.Fatalf("failed to initialize termui: %v", err)
+		slog.Error("failed to initialize termui: %v", err)
+		panic(err)
 	}
 	defer ui.Close()
 
@@ -35,34 +37,57 @@ func PlotWorker(results <-chan Result, csvReporterPath string) {
 	p2.SetRect(0, 25, 60, 28)
 	p2.BorderStyle.Fg = ui.ColorYellow
 
-	pLog := widgets.NewParagraph()
-	pLog.Title = "Test Results: "
-	pLog.Text = fmt.Sprintf("[%s](bg:yellow,mod:bold)", csvReporterPath)
-	pLog.SetRect(0, 28, 60, 31)
-	pLog.BorderStyle.Fg = ui.ColorCyan
+	pResults := widgets.NewParagraph()
+	pResults.Title = "Test Results: "
+	pResults.Text = fmt.Sprintf("[%s](bg:yellow,mod:bold)", csvReporterPath)
+	pResults.SetRect(0, 28, 60, 31)
+	pResults.BorderStyle.Fg = ui.ColorCyan
 
-	ui.Render(p4, p0, p2, pLog)
+	logs := make([][]string, 0)
+	logs = append(logs, []string{"timestamp", "entry"})
+
+	pLog := widgets.NewTable()
+	pLog.Rows = logs
+	pLog.Title = "Logs: "
+	pLog.RowSeparator = true
+	pLog.BorderStyle = ui.NewStyle(ui.ColorGreen)
+	pLog.SetRect(0, 31, 60, 35)
+	pLog.FillRow = true
+
+	ui.Render(p4, p0, p2, pResults)
 
 	resultsData := make([]Result, 0)
 	uiEvents := ui.PollEvents()
+
 	for {
 		select {
 		case e := <-uiEvents:
 			if e.Type == ui.KeyboardEvent {
 				switch e.ID {
 				case "q", "<C-c>":
+					sigChan <- os.Interrupt
 					return
 				}
 			}
+
 		case data := <-results:
 			resultsData = append(resultsData, data)
 			xLabels, newData := prepareDataForPlot(resultsData)
 
-			p2.Text = fmt.Sprintf("Response time: [%v](fg:blue,mod:bold), status: [%v](fg:red,mod:bold)", data.Duration, data.Status)
+			p2.Text = fmt.Sprintf("Response time: [%v](fg:blue,mod:bold), status: [%v](fg:red,mod:bold)", float32(data.Duration), data.Status)
+
+			if data.Err != "" {
+				row := []string{
+					time.Now().String(), data.Err,
+				}
+				logs[0] = row
+			}
+			// slog.Info(strings.Join(logs[1], "as"))
 
 			p0.Data = newData
 			p0.DataLabels = xLabels
-			ui.Render(p4, p0, p2, pLog)
+			pLog.Rows = logs
+			ui.Render(p4, p0, p2, pResults, pLog)
 		}
 	}
 }
@@ -80,10 +105,10 @@ func prepareDataForPlot(results []Result) ([]string, [][]float64) {
 	return xLabels, data
 }
 
-func parseTime(timestamp string) time.Time {
+func parseTime(timestamp string) (time.Time, error) {
 	t, err := time.Parse(time.RFC3339, timestamp)
 	if err != nil {
-		log.Fatalf("failed to parse time: %v", err)
+		return time.Time{}, fmt.Errorf("failed to parse time: %v", err)
 	}
-	return t
+	return t, nil
 }

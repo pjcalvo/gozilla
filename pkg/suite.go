@@ -1,26 +1,37 @@
-package client
+package pkg
 
 import (
+	"context"
 	"fmt"
-	"net/http"
+	"log/slog"
+	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
-	"github.com/pjcalvo/gozilla/internal/result"
+	"github.com/pjcalvo/gozilla/internal"
 )
 
 type TestSuite struct {
 	duration  time.Duration
 	users     int
-	baseURL   string
+	isPlotter bool
 	thinkTime time.Duration
+	ctx       context.Context
+	cancelCtx func()
 }
 
 func NewTestSuite() *TestSuite {
-	return &TestSuite{}
+	ctx, cancel := context.WithCancel(context.Background())
+	return &TestSuite{
+		ctx:       ctx,
+		cancelCtx: cancel,
+	}
 }
 
 func (t *TestSuite) WithDuration(duration time.Duration) *TestSuite {
 	t.duration = duration
+	t.ctx, t.cancelCtx = context.WithTimeout(t.ctx, duration)
 	return t
 }
 
@@ -29,8 +40,8 @@ func (t *TestSuite) WithUsers(users int) *TestSuite {
 	return t
 }
 
-func (t *TestSuite) WithBaseURL(baseURL string) *TestSuite {
-	t.baseURL = baseURL
+func (t *TestSuite) WithPlotter() *TestSuite {
+	t.isPlotter = true
 	return t
 }
 
@@ -39,17 +50,20 @@ func (t *TestSuite) WithThinkTime(thinkTime time.Duration) *TestSuite {
 	return t
 }
 
-func (t *TestSuite) executeTasksForThread(threadID int, tasks []Task, results chan result.Result) {
+func (t *TestSuite) executeTasksForThread(ctx context.Context, threadID int, tasks []Task, results chan internal.Result) {
 	for {
 		select {
+		case <-ctx.Done():
+			wg.Done()
+			return
 		// time out after the test is complete
 		case <-time.After(t.duration):
+			t.cancelCtx()
 			wg.Done()
 			return
 		default:
 			for _, task := range tasks {
-				client := http.Client{}
-				result := task.executeLinearTask(threadID, client, t.baseURL)
+				result := task.executeLinearTask(ctx, threadID)
 				results <- result
 			}
 			time.Sleep(t.thinkTime)
@@ -58,29 +72,43 @@ func (t *TestSuite) executeTasksForThread(threadID int, tasks []Task, results ch
 }
 
 func (t *TestSuite) ExecuteTest(tasks []Task) error {
-	tasks, err := prepareTasks(tasks, t.baseURL)
+	defer t.cancelCtx()
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+
+	tasks, err := prepareTasks(tasks)
 	if err != nil {
 		return err
 	}
 
-	resultsFile, writer, err := result.GenerateFile()
+	resultsFile, writer, err := internal.GenerateFile()
 	if err != nil {
 		return err
 	}
-	results := make(chan result.Result, 5)
-	resultsPlotter := make(chan result.Result, 1)
+	results := make(chan internal.Result, 5)
+	resultsPlotter := make(chan internal.Result, 1)
+
+	go func() {
+		<-sigChan
+		t.cancelCtx()
+
+		slog.Info("Received signal, shutting down...")
+
+	}()
 
 	// hardcoded number of workers to write a file
 	for w := 1; w <= 5; w++ {
-		go result.WritterWorker(writer, results, resultsPlotter)
+		go internal.WriterWorker(t.ctx, writer, results, resultsPlotter)
 	}
 	// plotting is done with one
-	go result.PlotWorker(resultsPlotter, resultsFile)
+	if t.isPlotter {
+		go internal.PlotWorker(resultsPlotter, resultsFile, sigChan)
+	}
 	printBoxedMessage(fmt.Sprintf("Starting test... Test Results: %s", resultsFile))
 
 	for i := 0; i < t.users; i++ {
 		wg.Add(1)
-		go t.executeTasksForThread(i, tasks, results)
+		go t.executeTasksForThread(t.ctx, i, tasks, results)
 	}
 	wg.Wait()
 	return nil
