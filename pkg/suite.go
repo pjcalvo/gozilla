@@ -102,7 +102,7 @@ func (t *TestSuite) ExecuteTest(tasks []Task) error {
 	}
 	// plotting is done with one
 	if t.isPlotter {
-		go internal.PlotWorker(resultsPlotter, resultsFile, sigChan)
+		go internal.PlotWorker(t.ctx, resultsPlotter, resultsFile, sigChan)
 	}
 	printBoxedMessage(fmt.Sprintf("Starting test... Test Results: %s", resultsFile))
 

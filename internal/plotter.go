@@ -1,6 +1,7 @@
 package internal
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"os"
@@ -11,7 +12,7 @@ import (
 	ui "github.com/gizak/termui/v3"
 )
 
-func PlotWorker(results <-chan Result, csvReporterPath string, sigChan chan os.Signal) {
+func PlotWorker(ctx context.Context, results <-chan Result, csvReporterPath string, sigChan chan os.Signal) {
 	if err := ui.Init(); err != nil {
 		slog.Error("failed to initialize termui: %v", err)
 		panic(err)
@@ -61,6 +62,9 @@ func PlotWorker(results <-chan Result, csvReporterPath string, sigChan chan os.S
 
 	for {
 		select {
+
+		case <-ctx.Done():
+			return
 		case e := <-uiEvents:
 			if e.Type == ui.KeyboardEvent {
 				switch e.ID {
